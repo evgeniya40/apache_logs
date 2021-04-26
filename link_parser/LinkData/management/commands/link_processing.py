@@ -17,51 +17,35 @@ class Command(BaseCommand):
 
     help = u''
 
-    def log_parser(self, file_name):
+    def log_parser(self, log_str):
         '''
         Функция записи данных из Apache лога в БД.
-        :param file_name: имя файла, содержащего логи
+        :param log_str: строка лога
         '''
-
-        f = open(file_name, "r")
-        lines = f.readlines()
         regex = '([(\w\.))]+) - (-|adva) \[(.*?)\] "(.*?)" (\d+) (\d+|-) "(.*?)" "(.*?)" "-"'
-
-        '''
-        #cпособ получения данных из лога без использования регулярных выражений (как вариат):
-        for line in lines[1:]:
-
-            elem = line.split(" ")
-            #print (elem)
-            ip_addr = elem[0]
-            date = elem[3][1:]
-            method = elem[5][1:]
-            uri = elem[6]
-            resp = elem[8]
-            size = elem[9]
-            #print(ip_addr, date, method, uri, resp, size )
-        '''
-        #начинаем с 1го элемента, так как нулевой - символ перевода строки
-        for line in lines[1:]:
-            if re.match(regex, line) is None:
-                print("Log file does not match the format!!!!! Break....")
-                break;
-            data_line = re.match(regex, line).groups()
-            #форматируем значение даты, чтобы не выводилось ничего лишнего, кроме ДД/ММ/ГГГГ
-            #при этом дата выводится, как в логах
-            date = data_line[2].split(' ')[0]
-            ind = date.index(':')
-            date = str(date[:ind])
-
-            new_el = LinkData(ip=data_line[0],
-                              date=str(date),
-                              http_method=data_line[3].split(' ')[0],
-                              uri=data_line[3].split(' ')[1],
-                              response_code=str(data_line[4]),
-                              size=str(data_line[5]))
-            new_el.save()
-            print("saving done")
-        f.close()
+        if re.match(regex, log_str) is None:
+                print("Error! Line does not match the format!Skipping.....")
+                return False
+        else:
+            try:
+                print("Parsing next line...")
+                data_line = re.match(regex, log_str).groups()
+                #форматируем значение даты, чтобы не выводилось ничего лишнего, кроме ДД/ММ/ГГГГ
+                date = data_line[2].split(' ')[0]
+                ind = date.index(':')
+                date = str(date[:ind])
+                new_el = LinkData(ip=data_line[0],
+                                  date=str(date),
+                                  http_method=data_line[3].split(' ')[0],
+                                  uri=data_line[3].split(' ')[1],
+                                  response_code=str(data_line[4]),
+                                  size=str(data_line[5]))
+                new_el.save()
+                print("saved")
+            except:
+                print("Line could not be loaded. Skipping.....")
+                return False
+        return True
 
     def add_arguments(self, parser):
         '''
@@ -76,8 +60,9 @@ class Command(BaseCommand):
         :param kwargs: ссылка на лог файл
         '''
         link = kwargs['link']
-        f = open('LOG_FILE1', "wb")
-        ufr = requests.get(link)  # делаем запрос
-        f.write(ufr.content)  # записываем содержимое в файл
-        f.close()
-        self.log_parser('LOG_FILE1')
+        try:
+            ufr = requests.get(link, stream=True)
+            for line in ufr.iter_lines():
+                self.log_parser(line.decode('UTF-8'))
+        except:
+            print("Stop.Error....")
